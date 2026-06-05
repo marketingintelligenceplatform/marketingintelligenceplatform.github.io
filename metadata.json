@@ -1,0 +1,6 @@
+{
+  "name": "Marketing Intelligence Platform",
+  "description": "An enterprise-grade marketing funnel, CRM, analytics, and business intelligence platform styled in Ma Creatives Studio's premium Black Currant luxury aesthetic, featuring advanced statistical analytics and an interactive AI Assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
