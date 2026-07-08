@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: marketing-intelligence-platform-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: MIP_DATA_FILE
+        value: data/mip-db.json
