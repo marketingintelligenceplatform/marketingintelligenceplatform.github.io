@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { connectDatabase } from "./server/config/database";
 
 // Import types and default mock data for backing in-memory CRM store
 import { FunnelStage, LeadSource, Lead, Campaign, Activity, FollowUp, Notification, UserRole, CurrentUser } from "./src/types";
@@ -58,6 +59,7 @@ async function loadBackendState() {
 }
 
 async function startServer() {
+  await connectDatabase();
   await loadBackendState();
 
   const app = express();
