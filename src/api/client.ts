@@ -1,15 +1,23 @@
-import { Lead, Campaign, Activity, FollowUp, Notification, CurrentUser } from "../types";
+import { Lead, Campaign, Activity, FollowUp, Notification, CurrentUser, PipelineStage } from "../types";
 
-const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "";
+const SESSION_TOKEN_KEY = "mip_session_token";
 
-function buildUrl(url: string) {
-  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
-  return `${API_BASE_URL}${normalizedPath}`;
+function headers(): HeadersInit {
+  const token = localStorage.getItem(SESSION_TOKEN_KEY);
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
-async function readError(res: Response) {
-  const errBody = await res.json().catch(() => ({}));
-  return errBody.error || `API error (${res.status}): ${res.statusText}`;
+async function parseResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    if (res.status === 401) localStorage.removeItem(SESSION_TOKEN_KEY);
+    throw new Error(errBody.error || `API error (${res.status}): ${res.statusText}`);
+  }
+  return res.status === 204 ? undefined as T : res.json();
 }
 
 export interface AppState {
@@ -18,52 +26,57 @@ export interface AppState {
   followups: FollowUp[];
   activities: Activity[];
   notifications: Notification[];
+  pipelineStages?: PipelineStage[];
 }
 
 export const apiClient = {
+  setSessionToken(token: string): void {
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+  },
+
+  clearSessionToken(): void {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+  },
+
   async get<T>(url: string): Promise<T> {
-    const res = await fetch(buildUrl(url), {
-      headers: { "Content-Type": "application/json" }
+    const res = await fetch(`${API_BASE_URL}${url}`, {
+      headers: headers()
     });
-    if (!res.ok) {
-      throw new Error(await readError(res));
-    }
-    return res.json();
+    return parseResponse<T>(res);
   },
 
   async post<T>(url: string, body?: any): Promise<T> {
-    const res = await fetch(buildUrl(url), {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers(),
       body: JSON.stringify(body)
     });
-    if (!res.ok) {
-      throw new Error(await readError(res));
-    }
-    return res.json();
+    return parseResponse<T>(res);
   },
 
   async patch<T>(url: string, body?: any): Promise<T> {
-    const res = await fetch(buildUrl(url), {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: headers(),
       body: JSON.stringify(body)
     });
-    if (!res.ok) {
-      throw new Error(await readError(res));
-    }
-    return res.json();
+    return parseResponse<T>(res);
   },
 
   async put<T>(url: string, body?: any): Promise<T> {
-    const res = await fetch(buildUrl(url), {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: headers(),
       body: JSON.stringify(body)
     });
-    if (!res.ok) {
-      throw new Error(await readError(res));
-    }
-    return res.json();
+    return parseResponse<T>(res);
+  },
+
+  async delete<T>(url: string): Promise<T> {
+    const res = await fetch(`${API_BASE_URL}${url}`, {
+      method: "DELETE",
+      headers: headers()
+    });
+    return parseResponse<T>(res);
   }
 };

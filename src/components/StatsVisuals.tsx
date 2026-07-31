@@ -15,16 +15,19 @@ export function SalesFunnelWidget({ leads }: StatsVisualsProps) {
     return acc;
   }, {} as Record<FunnelStage, number>);
 
-  // Define logical stage volumes with sequential funnel conversions
-  // To show a realistic waterfall, we define a waterfall base
+  const largestStageCount = Math.max(...Object.values(stageCounts), 1);
   const stageData = [
-    { stage: FunnelStage.NEW_LEAD, count: leads.length, displayCount: leads.length, pct: 100, color: "#C084FC" },
-    { stage: FunnelStage.CONTACTED, count: leads.filter(l => l.stage !== FunnelStage.NEW_LEAD).length, displayCount:  leads.filter(l => l.stage !== FunnelStage.NEW_LEAD).length, pct: 85, color: "#A855F7" },
-    { stage: FunnelStage.QUALIFIED, count: leads.filter(l => ![FunnelStage.NEW_LEAD, FunnelStage.CONTACTED].includes(l.stage)).length, displayCount: leads.filter(l => l.stage === FunnelStage.QUALIFIED).length, pct: 60, color: "#8B5CF6" },
-    { stage: FunnelStage.PROPOSAL_SENT, count: leads.filter(l => [FunnelStage.PROPOSAL_SENT, FunnelStage.NEGOTIATION, FunnelStage.WON].includes(l.stage)).length, displayCount: leads.filter(l => l.stage === FunnelStage.PROPOSAL_SENT).length, pct: 45, color: "#7C3AED" },
-    { stage: FunnelStage.NEGOTIATION, count: leads.filter(l => [FunnelStage.NEGOTIATION, FunnelStage.WON].includes(l.stage)).length, displayCount: leads.filter(l => l.stage === FunnelStage.NEGOTIATION).length, pct: 30, color: "#6D28D9" },
-    { stage: FunnelStage.WON, count: leads.filter(l => l.stage === FunnelStage.WON).length, displayCount: leads.filter(l => l.stage === FunnelStage.WON).length, pct: 14.2, color: "#10B981" },
-  ];
+    { stage: FunnelStage.NEW_LEAD, color: "#C084FC" },
+    { stage: FunnelStage.CONTACTED, color: "#A855F7" },
+    { stage: FunnelStage.QUALIFIED, color: "#8B5CF6" },
+    { stage: FunnelStage.PROPOSAL_SENT, color: "#7C3AED" },
+    { stage: FunnelStage.NEGOTIATION, color: "#6D28D9" },
+    { stage: FunnelStage.WON, color: "#10B981" },
+  ].map((item) => ({
+    ...item,
+    count: stageCounts[item.stage],
+    pct: Math.round((stageCounts[item.stage] / largestStageCount) * 100),
+  }));
 
   return (
     <div className="bg-[#1F1830] border border-white/5 rounded-2xl p-5 space-y-4">
@@ -33,11 +36,11 @@ export function SalesFunnelWidget({ leads }: StatsVisualsProps) {
           <Flame className="w-4 h-4 text-[#C084FC]" />
           <h3 className="font-display font-semibold text-xs text-[#F8FAFC]">Funnel Conversion Pipeline</h3>
         </div>
-        <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/5 text-[#94A3B8]">Waterflow Waterfall</span>
+        <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/5 text-[#94A3B8]">Current stage volume</span>
       </div>
 
       <div className="space-y-2.5 pt-1">
-        {stageData.map((item, index) => {
+        {stageData.map((item) => {
           const isHovered = hoveredStage === item.stage;
           return (
             <div 
@@ -51,8 +54,7 @@ export function SalesFunnelWidget({ leads }: StatsVisualsProps) {
                   {item.stage}
                 </span>
                 <div className="flex items-center space-x-2 font-mono text-[10px]">
-                  <span className="text-[#94A3B8]">{item.displayCount} at stage</span>
-                  <span className="font-semibold text-[#C084FC]">{item.pct}%</span>
+                  <span className="text-[#94A3B8]">{item.count} at stage</span>
                 </div>
               </div>
 
@@ -73,11 +75,6 @@ export function SalesFunnelWidget({ leads }: StatsVisualsProps) {
             </div>
           );
         })}
-      </div>
-
-      <div className="bg-[#161122]/50 p-2.5 rounded-xl border border-white/5 text-[10px] text-gray-400 flex items-center justify-between">
-        <span>Average Win Velocity: <strong className="text-gray-200">14.6 days</strong></span>
-        <span>Dropoff Rate: <strong className="text-rose-400">55% Contacts</strong></span>
       </div>
     </div>
   );
@@ -216,7 +213,7 @@ export function RevenueTrendWidget({ leads, formatCurrency }: { leads: Lead[]; f
     { label: "Jun", revenue: 84500, leads: leads.length * 10 }, // Dyn scale using mock state
   ];
 
-  const maxVal = 95000;
+  const maxVal = Math.max(95000, ...trendHistory.map(pt => pt.revenue));
   const paddingY = 20;
   const width = 340;
   const height = 120;

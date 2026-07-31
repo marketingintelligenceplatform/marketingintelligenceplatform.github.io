@@ -1,5 +1,5 @@
 import React from "react";
-import { UserRole, CurrentUser } from "../types";
+import { CurrentUser, WorkspaceMembership } from "../types";
 import { 
   BarChart3, 
   Map, 
@@ -16,6 +16,7 @@ import {
   HelpCircle,
   BrainCircuit,
   CornerDownRight,
+  Share2,
   X
 } from "lucide-react";
 
@@ -26,18 +27,32 @@ interface SidebarNavProps {
   onLogout: () => void;
   unreadCount: number;
   onClose?: () => void;
+  workspaces: WorkspaceMembership[];
+  activeWorkspaceId: string;
+  onWorkspaceSelect: (workspaceId: string) => void;
 }
 
-export default function SidebarNav({ currentUser, activeTab, setActiveTab, onLogout, unreadCount, onClose }: SidebarNavProps) {
+export default function SidebarNav({
+  currentUser,
+  activeTab,
+  setActiveTab,
+  onLogout,
+  unreadCount,
+  onClose,
+  workspaces,
+  activeWorkspaceId,
+  onWorkspaceSelect,
+}: SidebarNavProps) {
   
   // Navigation tabs config mapping views to standard lucide icons
   const menuItems = [
-    { id: "dashboard", label: "Analytics Overview", icon: Grid },
-    { id: "leads", label: "Lead Profiles CRM", icon: Users },
-    { id: "pipeline", label: "Pipeline Kanban", icon: Layers },
-    { id: "campaigns", label: "Campaigns Hub", icon: Megaphone },
-    { id: "analytics", label: "Decision Statistics", icon: Binary },
-    { id: "settings", label: "System Config", icon: Settings },
+    { id: "dashboard", label: "Dashboard", icon: Grid },
+    { id: "leads", label: "Leads", icon: Users },
+    { id: "pipeline", label: "Pipeline", icon: Layers },
+    { id: "social", label: "Social Hub", icon: Share2 },
+    { id: "campaigns", label: "Campaigns", icon: Megaphone },
+    { id: "analytics", label: "Analytics", icon: Binary },
+    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -54,7 +69,7 @@ export default function SidebarNav({ currentUser, activeTab, setActiveTab, onLog
             </div>
             <div className="min-w-0">
               <h2 className="font-display font-semibold text-[#F8FAFC] tracking-tight text-sm leading-none truncate">MIP Platform</h2>
-              <p className="text-[#94A3B8] font-mono text-[8.5px] uppercase tracking-wider leading-none mt-1 truncate">Ma Creatives Studio</p>
+              <p className="text-[#94A3B8] font-mono text-[8.5px] uppercase tracking-wider leading-none mt-1 truncate">Marketing Intelligence</p>
             </div>
           </div>
 
@@ -82,12 +97,26 @@ export default function SidebarNav({ currentUser, activeTab, setActiveTab, onLog
             </span>
           </div>
         </div>
+
+        <label className="mt-3 block space-y-1.5">
+          <span className="px-1 font-mono text-[8px] uppercase tracking-wider text-[#94A3B8]">Workspace</span>
+          <select
+            value={activeWorkspaceId}
+            onChange={(event) => onWorkspaceSelect(event.target.value)}
+            className="w-full cursor-pointer rounded-lg border border-white/10 bg-[#0D0B14] px-2.5 py-2 text-xs text-white outline-none focus:border-[#7C3AED]"
+            aria-label="Switch workspace"
+          >
+            {workspaces.map((workspace) => (
+              <option key={workspace.organizationId} value={workspace.organizationId}>{workspace.name}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* Navigation middle links */}
       <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
         <span className="font-mono text-[8px] text-[#94A3B8] block px-3 uppercase tracking-wider font-semibold mb-2">
-          Enterprise Modules
+          Navigation
         </span>
         {menuItems.map((item) => {
           const isActive = activeTab === item.id;
@@ -96,7 +125,7 @@ export default function SidebarNav({ currentUser, activeTab, setActiveTab, onLog
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 group ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 group cursor-pointer ${
                 isActive
                   ? "bg-gradient-to-r from-[#7C3AED]/20 to-[#A855F7]/10 text-white border border-[#7C3AED]/20 shadow-md shadow-[#7C3AED]/5"
                   : "bg-transparent text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
@@ -136,16 +165,16 @@ export default function SidebarNav({ currentUser, activeTab, setActiveTab, onLog
           <button 
             onClick={onLogout}
             title="Log out session"
-            className="p-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-rose-400 transition-colors"
+            className="p-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-rose-400 transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Stephen Kimaru portfolio footer branding line */}
+        {/* Footer branding line */}
         <div className="text-[10px] text-center text-[#94A3B8]/30 space-y-1">
-          <p>Built by <a href="https://stephenkimaru.github.io" target="_blank" rel="noopener noreferrer" className="hover:underline text-gray-500 hover:text-[#C084FC]">Stephen Kimaru</a></p>
-          <p className="font-mono text-[8px] tracking-widest text-[#94A3B8]/20 uppercase">Ma Creatives Studio</p>
+          <p>Marketing Intelligence Platform</p>
+          <p className="font-mono text-[8px] tracking-widest text-[#94A3B8]/20 uppercase">Enterprise Lead Operating System</p>
         </div>
       </div>
 

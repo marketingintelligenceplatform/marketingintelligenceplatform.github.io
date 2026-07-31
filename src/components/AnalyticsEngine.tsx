@@ -109,15 +109,15 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#1F1830]/80 p-5 rounded-2xl border border-white/5 gap-4">
         <div>
           <h2 className="text-lg font-bold font-display text-white tracking-tight flex items-center gap-2">
-            <Binary className="w-5 h-5 text-[#C084FC]" /> Dynamic Statistical Testing Console
+            <Binary className="w-5 h-5 text-[#C084FC]" /> Marketing & Sales Analytics
           </h2>
           <p className="text-xs text-[#94A3B8]">
-            Perform mathematical validations, marketing experiments, and dynamic hypothesis tests.
+            Compare campaign variations, estimate customer lifetime value, and view conversion trends.
           </p>
         </div>
         <div className="flex items-center space-x-2 text-[10px] font-mono bg-[#7C3AED]/10 text-[#C084FC] border border-[#7C3AED]/25 px-3 py-1.5 rounded-full">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Decision Support Pipeline Active</span>
+          <span>Analytics Ready</span>
         </div>
       </div>
 
@@ -129,22 +129,22 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
           <div className="flex justify-between items-center border-b border-white/5 pb-3">
             <div className="flex items-center space-x-2">
               <Calculator className="w-4 h-4 text-[#C084FC]" />
-              <h3 className="font-display font-semibold text-sm text-[#F8FAFC]">Campaign Multi-Variant Significance Test</h3>
+              <h3 className="font-display font-semibold text-sm text-[#F8FAFC]">A/B Campaign Comparison</h3>
             </div>
-            <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-[#7C3AED]/15 text-[#C084FC]">Two-Tailed Z-Test</span>
+            <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-[#7C3AED]/15 text-[#C084FC]">A/B Test</span>
           </div>
 
           <p className="text-xs text-[#94A3B8]">
-            Input traffic and conversion results to calculate mathematical significance ($2$-tailed CDF) and determine positive budget allocation rules.
+            Compare two campaign variations (Variant A vs. Variant B) to see which one converts better and if the difference is statistically significant.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             {/* Variant A Inputs */}
             <div className="bg-[#161122]/60 p-4 rounded-xl border border-white/5 space-y-3">
-              <span className="font-mono text-[10px] text-[#C084FC] font-semibold block uppercase">Variant A (Control)</span>
+              <span className="font-mono text-[10px] text-[#C084FC] font-semibold block uppercase">Variant A (Current Version)</span>
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Raw Impressions / Clicks</label>
+                <label className="text-[10px] text-gray-400 block mb-1">Clicks / Visitors</label>
                 <input
                   type="number"
                   min="1"
@@ -154,7 +154,7 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
                 />
               </div>
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Validated Conversions</label>
+                <label className="text-[10px] text-gray-400 block mb-1">Successful Conversions</label>
                 <input
                   type="number"
                   min="0"
@@ -171,9 +171,9 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
 
             {/* Variant B Inputs */}
             <div className="bg-[#161122]/60 p-4 rounded-xl border border-white/5 space-y-3">
-              <span className="font-mono text-[10px] text-[#A855F7] font-semibold block uppercase">Variant B (Challenger)</span>
+              <span className="font-mono text-[10px] text-[#A855F7] font-semibold block uppercase">Variant B (New Version)</span>
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Raw Impressions / Clicks</label>
+                <label className="text-[10px] text-gray-400 block mb-1">Clicks / Visitors</label>
                 <input
                   type="number"
                   min="1"
@@ -183,7 +183,7 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
                 />
               </div>
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Validated Conversions</label>
+                <label className="text-[10px] text-gray-400 block mb-1">Successful Conversions</label>
                 <input
                   type="number"
                   min="0"
@@ -204,19 +204,19 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
           <div className="bg-[#0D0B14]/80 border border-white/5 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
             
             <div className="space-y-1">
-              <span className="text-[9px] text-[#94A3B8] uppercase block">Test Statistic Z</span>
+              <span className="text-[9px] text-[#94A3B8] uppercase block">Score Difference (Z)</span>
               <span className="text-xl font-bold font-display text-[#F8FAFC]" id="z-score-val">
-                {zScore.toFixed(3)}
+                {zScore.toFixed(2)}
               </span>
-              <span className="text-[9px] text-gray-400 block font-mono">SE = {errorPooled.toFixed(4)}</span>
+              <span className="text-[9px] text-gray-400 block font-mono">Margin: ±{(errorPooled * 100).toFixed(2)}%</span>
             </div>
 
             <div className="space-y-1">
-              <span className="text-[9px] text-[#94A3B8] uppercase block">Significance p-value</span>
+              <span className="text-[9px] text-[#94A3B8] uppercase block">Confidence Score</span>
               <span className={`text-xl font-bold font-display ${pValue <= 0.05 ? "text-emerald-400" : "text-amber-500"}`} id="p-value-val">
-                {pValue.toFixed(4)}
+                {confidenceLevel.toFixed(1)}%
               </span>
-              <span className="text-[9px] text-gray-400 block font-mono">Confidence: {confidenceLevel.toFixed(1)}%</span>
+              <span className="text-[9px] text-gray-400 block font-mono">p = {pValue.toFixed(3)}</span>
             </div>
 
             <div className="rounded-lg p-2 flex items-center justify-center border text-center text-xs h-full"
@@ -229,12 +229,12 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
                 {isSignificant ? (
                   <div className="text-emerald-400 flex flex-col items-center">
                     <CheckCircle2 className="w-5 h-5 mb-0.5" />
-                    <span className="font-semibold block text-[10px]">Significant Match</span>
+                    <span className="font-semibold block text-[10px]">Clear Winner</span>
                   </div>
                 ) : (
                   <div className="text-amber-400 flex flex-col items-center">
                     <AlertTriangle className="w-5 h-5 mb-0.5" />
-                    <span className="font-semibold block text-[10px]">Inconclusive</span>
+                    <span className="font-semibold block text-[10px]">Needs More Data</span>
                   </div>
                 )}
               </div>
@@ -244,25 +244,25 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
 
           {/* Probability Confidence Bounds Table */}
           <div className="space-y-2">
-            <span className="font-mono text-[9px] text-gray-400 uppercase tracking-wide">95% Conversion Interval Bounds</span>
+            <span className="font-mono text-[9px] text-gray-400 uppercase tracking-wide">Estimated Conversion Range</span>
             <div className="grid grid-cols-2 gap-3 text-xs font-mono">
               <div className="bg-[#161122]/50 p-2.5 rounded-lg border border-white/5">
-                <span className="text-gray-400 text-[10px] block mb-0.5">Variant A Bounds</span>
+                <span className="text-gray-400 text-[10px] block mb-0.5">Variant A Range</span>
                 <span className="text-white text-[11px] block">
-                  [{(ciLowerA * 100).toFixed(2)}% — {(ciUpperA * 100).toFixed(2)}%]
+                  {(ciLowerA * 100).toFixed(1)}% to {(ciUpperA * 100).toFixed(1)}%
                 </span>
               </div>
               <div className="bg-[#161122]/50 p-2.5 rounded-lg border border-white/5">
-                <span className="text-gray-400 text-[10px] block mb-0.5">Variant B Bounds</span>
+                <span className="text-gray-400 text-[10px] block mb-0.5">Variant B Range</span>
                 <span className="text-white text-[11px] block">
-                  [{(ciLowerB * 100).toFixed(2)}% — {(ciUpperB * 100).toFixed(2)}%]
+                  {(ciLowerB * 100).toFixed(1)}% to {(ciUpperB * 100).toFixed(1)}%
                 </span>
               </div>
             </div>
             <p className="text-[10px] text-[#94A3B8]/80 leading-normal pt-1">
               {isSignificant 
-                ? `Variant B shows statistically superior performance at the 95% confidence level ($p${pValue < 0.001 ? " < 0.001" : ` = ${pValue.toFixed(3)}`}$). The business is advised to replace the standard Variant A control.` 
-                : "The difference in variants conversions is currently too narrow to pass the standard 95% significance criteria ($p > 0.05$). Run the campaign longer before adopting budget reallocations."
+                ? "Variant B is performing noticeably better than Variant A with high confidence. You can comfortably switch to Variant B." 
+                : "The difference between Variant A and Variant B is currently small. We recommend running the test longer to gather more data before making a decision."
               }
             </p>
           </div>
@@ -276,13 +276,13 @@ export default function AnalyticsEngine({ leads, campaigns, formatCurrency }: An
             <div className="flex justify-between items-center border-b border-white/5 pb-3">
               <div className="flex items-center space-x-2">
                 <TrendingUp className="w-4 h-4 text-[#C084FC]" />
-                <h3 className="font-display font-semibold text-sm text-[#F8FAFC]">CLT Convergence Sandbox</h3>
+                <h3 className="font-display font-semibold text-sm text-[#F8FAFC]">Conversion Rate Estimator</h3>
               </div>
-              <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-white/5 text-gray-400">Normal CDF</span>
+              <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-white/5 text-gray-400">Sample Curve</span>
             </div>
 
             <p className="text-xs text-[#94A3B8]">
-              Central Limit Theorem states sample conversion distribution converges toward normality as $n$ expands.
+              See how your conversion rate forecast stabilizes as you collect more leads.
             </p>
 
             {/* Slider parameters */}

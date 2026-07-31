@@ -62,10 +62,10 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#1F1830] p-5 rounded-2xl border border-white/5 gap-4">
         <div>
           <h2 className="text-lg font-bold font-display text-white tracking-tight flex items-center gap-2">
-            <Megaphone className="w-5 h-5 text-[#C084FC]" /> Marketing Campaigns Hub
+            <Megaphone className="w-5 h-5 text-[#C084FC]" /> Campaigns
           </h2>
           <p className="text-xs text-[#94A3B8]">
-            Manage advertisement allocation budgets, monitor performance KPIs, and calculate estimated ROI loops.
+            Track campaign budgets, view results, and project return on investment.
           </p>
         </div>
         
@@ -74,7 +74,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
             onClick={() => setShowForm(!showForm)}
             className="px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] hover:from-[#A855F7] hover:to-[#C084FC] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-md shadow-[#7C3AED]/20 hover:scale-[1.01]"
           >
-            <Plus className="w-4 h-4" /> Add Campaign Account
+            <Plus className="w-4 h-4" /> Create Campaign
           </button>
         )}
       </div>
@@ -82,7 +82,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
       {/* Dynamic Drawer Create Form */}
       {showForm && (
         <form onSubmit={handleCreate} className="bg-[#1F1830] border border-[#7C3AED]/35 p-6 rounded-2xl space-y-4 shadow-xl relative animate-in fade-in duration-300">
-          <h4 className="text-xs font-mono uppercase tracking-wider text-[#C084FC] font-bold">New Campaign Credentials</h4>
+          <h4 className="text-xs font-mono uppercase tracking-wider text-[#C084FC] font-bold">New Campaign Details</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] text-gray-400 font-mono">Campaign Title</label>
@@ -91,23 +91,23 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Q3 LinkedIn Partner Program"
+                placeholder="e.g. Q3 Social Media Campaign"
                 className="w-full bg-[#0D0B14] border border-white/5 rounded-xl px-3 py-2 text-xs text-white"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 font-mono">Target Channel Strategy</label>
+              <label className="text-[10px] text-gray-400 font-mono">Goal / Description</label>
               <input
                 type="text"
                 required
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
-                placeholder="Brief summary profile notes"
+                placeholder="Brief summary of campaign goals"
                 className="w-full bg-[#0D0B14] border border-white/5 rounded-xl px-3 py-2 text-xs text-white"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 font-mono">Budget Allocated ({selectedCurrency})</label>
+              <label className="text-[10px] text-gray-400 font-mono">Total Budget ({selectedCurrency})</label>
               <input
                 type="number"
                 required
@@ -117,7 +117,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-gray-400 font-mono">Starting Expense Spent ({selectedCurrency})</label>
+              <label className="text-[10px] text-gray-400 font-mono">Amount Spent ({selectedCurrency})</label>
               <input
                 type="number"
                 required
@@ -152,7 +152,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
         <div className="lg:col-span-8 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {campaigns.map((camp) => {
-              const capPct = Math.round((camp.spent / camp.budget) * 100);
+              const capPct = camp.budget > 0 ? Math.round((camp.spent / camp.budget) * 100) : 0;
               const costPerLead = camp.leadsCount > 0 ? Math.round(camp.spent / camp.leadsCount) : 0;
               const isOverspent = capPct > 80;
 
@@ -228,13 +228,13 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
           </div>
 
           <p className="text-[11.5px] text-[#94A3B8] leading-normal">
-            Model anticipated conversion values and pipeline payback horizons. Adjust estimated acquisition values to simulate profit metrics.
+            Estimate how many customers you can acquire and your expected return on ad spend.
           </p>
 
           <div className="space-y-3 pt-1">
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-gray-400">Ad Allocation spent:</span>
+                <span className="text-gray-400">Ad Budget:</span>
                 <span className="text-[#C084FC] font-semibold">{format(planAdSpend)}</span>
               </div>
               <input
@@ -250,7 +250,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
 
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-gray-400 font-sans">Acquisition Costs (CPA):</span>
+                <span className="text-gray-400 font-sans">Cost Per Acquisition (CPA):</span>
                 <span className="text-[#C084FC] font-semibold">{format(planCPA)}</span>
               </div>
               <input
@@ -266,7 +266,7 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
 
             <div className="space-y-1">
               <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-gray-400">Average Client LTV value:</span>
+                <span className="text-gray-400">Customer Lifetime Value (LTV):</span>
                 <span className="text-[#C084FC] font-semibold">{format(planLTV)}</span>
               </div>
               <input
@@ -284,15 +284,15 @@ export default function CampaignCenter({ campaigns, onAddCampaign, userRole, for
           {/* Planned outputs */}
           <div className="bg-[#0D0B14]/90 p-4 rounded-xl border border-white/5 space-y-3 font-mono text-[10px]">
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Estimated Clients Acquired:</span>
+              <span className="text-gray-400">Estimated Customers Acquired:</span>
               <span className="text-white font-medium">{planEstAcquired.toFixed(1)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Total Proj. Receipts:</span>
+              <span className="text-gray-400">Projected Revenue:</span>
               <span className="text-white font-semibold">{format(Math.round(planRevenueProj))}</span>
             </div>
             <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2">
-              <span className="text-gray-200">Ad Return Ratio (ROI):</span>
+              <span className="text-gray-200">Return on Investment (ROI):</span>
               <span className={`font-bold ${planROI >= 100 ? "text-emerald-400" : "text-amber-500"}`}>
                 {planROI.toFixed(1)}%
               </span>

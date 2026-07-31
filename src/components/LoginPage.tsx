@@ -1,42 +1,43 @@
 import React, { useState } from "react";
-import { UserRole, CurrentUser } from "../types";
-import { Shield, Sparkles, UserCheck, ArrowRight, ArrowLeft } from "lucide-react";
+import { UserRole } from "../types";
+import { Shield, Sparkles, UserCheck, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 interface LoginPageProps {
-  onLoginSuccess: (user: CurrentUser) => void;
+  onLoginSuccess: (credentials: { email: string; password: string }) => void;
+  onSignUp: (details: { firstName: string; lastName: string; email: string; password: string }) => void;
   onBackToLanding: () => void;
+  error?: string | null;
 }
 
-export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPageProps) {
+export default function LoginPage({ onLoginSuccess, onSignUp, onBackToLanding, error }: LoginPageProps) {
   // Local credential states
-  const [email, setEmail] = useState("macreatives.global@gmail.com");
-  const [password, setPassword] = useState("••••••••");
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("admin@mip-platform.com");
+  const [password, setPassword] = useState("Pass2026!");
+  const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.ADMIN);
-  const [customName, setCustomName] = useState("Stephen Kimaru");
 
-  // Automated credential seeder for the demo
+  // Automated credential seeder for role presets
   const selectPresetRole = (role: UserRole) => {
     setSelectedRole(role);
     if (role === UserRole.ADMIN) {
-      setCustomName("Stephen Kimaru");
-      setEmail("macreatives.global@gmail.com");
+      setEmail("admin@mip-platform.com");
     } else if (role === UserRole.MARKETING_MANAGER) {
-      setCustomName("Sarah Connor");
-      setEmail("sconnor@macreatives.com");
+      setEmail("marketing@mip-platform.com");
     } else {
-      setCustomName("Alex Cooper");
-      setEmail("acooper@macreatives.com");
+      setEmail("sales@mip-platform.com");
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onLoginSuccess({
-      name: customName,
-      email: email,
-      role: selectedRole,
-      avatar: customName.split(" ").map(w => w[0]).join("")
-    });
+    if (mode === "signup") {
+      onSignUp({ firstName, lastName, email, password });
+      return;
+    }
+    onLoginSuccess({ email, password });
   };
 
   return (
@@ -50,7 +51,7 @@ export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPage
         onClick={onBackToLanding}
         className="absolute top-8 left-8 flex items-center space-x-2 text-xs text-[#94A3B8]/80 hover:text-white transition-colors duration-200"
       >
-        <ArrowLeft className="w-3.5 h-3.5" /> <span>Back to Home</span>
+        <ArrowLeft className="w-3.5 h-3.5" /> <span>Back to Overview</span>
       </button>
 
       {/* Main glass card portal */}
@@ -60,20 +61,23 @@ export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPage
         <div className="text-center space-y-2">
           <div className="inline-flex items-center space-x-1 border border-[#7C3AED]/20 bg-[#7C3AED]/10 px-3 py-1 rounded-full">
             <Sparkles className="w-3 text-[#C084FC]" />
-            <span className="font-mono text-[9px] uppercase tracking-wider text-[#C084FC]">Portal Authentication</span>
+            <span className="font-mono text-[9px] uppercase tracking-wider text-[#C084FC]">Platform Access</span>
           </div>
           <h2 className="font-display font-bold text-2xl tracking-tight mt-1 text-[#F8FAFC]">
-            MIP Enterprise Access
+            {mode === "login" ? "MIP Business Portal" : "Create your MIP account"}
           </h2>
           <p className="text-xs text-[#94A3B8]">
-            Select a profile preset to simulate enterprise authorization rules and view configurations.
+            {mode === "login"
+              ? "Sign in with your organization account. The role profile only fills in the demo credentials."
+              : "Create one account, then create or join the workspaces you belong to."}
           </p>
+          {error && <p role="alert" className="text-xs text-red-300 bg-red-950/30 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>}
         </div>
 
         {/* Dynamic Preset Selector Tabs */}
-        <div className="space-y-2">
+        {mode === "login" && <div className="space-y-2">
           <label className="font-mono text-[9px] text-[#94A3B8] uppercase block tracking-wider font-semibold">
-            Preset Role Authorization Profiles
+            Select Role Profile
           </label>
           <div className="grid grid-cols-3 gap-2">
             {(Object.values(UserRole) as UserRole[]).map((role) => {
@@ -83,7 +87,7 @@ export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPage
                   key={role}
                   type="button"
                   onClick={() => selectPresetRole(role)}
-                  className={`p-2.5 rounded-xl border text-[10px] font-medium leading-none flex flex-col justify-center items-center text-center space-y-1 transition-all duration-300 ${
+                  className={`p-2.5 rounded-xl border text-[10px] font-medium leading-none flex flex-col justify-center items-center text-center space-y-1 transition-all duration-300 cursor-pointer ${
                     active
                       ? "bg-gradient-to-b from-[#7C3AED]/20 to-[#A855F7]/10 border-[#7C3AED] text-[#C084FC] shadow-lg shadow-[#7C3AED]/5"
                       : "bg-[#161122]/60 border-white/5 text-gray-400 hover:border-white/10 hover:bg-[#1F1830]/80"
@@ -95,27 +99,25 @@ export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPage
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {/* Dynamic Credentials Form */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          {mode === "signup" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="font-mono text-[9px] text-gray-400 uppercase tracking-wide block">First name</label>
+                <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} maxLength={100} className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-mono text-[9px] text-gray-400 uppercase tracking-wide block">Last name</label>
+                <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} maxLength={100} className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all" />
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <label className="font-mono text-[9px] text-gray-400 uppercase tracking-wide block">
-              Authorized Name
-            </label>
-            <input
-              type="text"
-              required
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-              className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-[#F8FAFC] placeholder-gray-500 focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all"
-              placeholder="e.g. Stephen Kimaru"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-mono text-[9px] text-gray-400 uppercase tracking-wide block">
-              Identity Email Address
+              Work Email Address
             </label>
             <input
               type="email"
@@ -123,55 +125,77 @@ export default function LoginPage({ onLoginSuccess, onBackToLanding }: LoginPage
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-[#F8FAFC] placeholder-gray-500 focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all"
-              placeholder="name@company.com"
+              placeholder="user@yourcompany.com"
             />
           </div>
 
           <div className="space-y-1.5">
             <div className="flex justify-between items-center">
               <label className="font-mono text-[9px] text-gray-400 uppercase tracking-wide">
-                Key Phrase Password
+                Password
               </label>
-              <button 
+              {mode === "login" && <button
                 type="button" 
-                onClick={() => alert("Enterprise credential lookup bypass active: Any password is accepted for preset verification.")}
+                onClick={() => alert("Ask your administrator to reset your password. Password reset emails are not included in this first release.")}
                 className="text-[9px] text-[#C084FC] hover:underline"
               >
                 Forgot Password?
+              </button>}
+            </div>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl pl-4 pr-10 py-2.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all"
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowPassword((prev) => !prev);
+                }}
+                className="absolute right-3 top-2.5 z-10 text-gray-400 hover:text-white transition-colors p-1 cursor-pointer"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4 text-[#C084FC]" /> : <Eye className="w-4 h-4 text-gray-400" />}
               </button>
             </div>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#0d0b14]/90 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#7C3AED]/60 focus:ring-1 focus:ring-[#7C3AED]/30 transition-all"
-            />
           </div>
 
           {/* Permission list preview banner */}
           <div className="bg-[#161122]/80 border border-white/5 p-3 rounded-xl flex items-start space-x-2.5 text-[10px] text-gray-400 leading-normal">
             <Shield className="w-4 h-4 text-[#C084FC] shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold text-gray-300 block mb-0.5">Authorization Level: {selectedRole}</span>
-              {selectedRole === UserRole.ADMIN && "Full systems dashboard permission: Config stages, configure mock CRM data parameters, evaluate predictions."}
-              {selectedRole === UserRole.MARKETING_MANAGER && "Campaign allocation edits, statistical hypothesis testing center, automated conversion profiling."}
-              {selectedRole === UserRole.SALES_AGENT && "Pipeline lead movement, logging follow-ups & activities, assigned deals updates."}
+              <span className="font-semibold text-gray-300 block mb-0.5">{mode === "login" ? `Role Permission: ${selectedRole}` : "Secure account setup"}</span>
+              {mode === "signup" && "Use at least 12 characters. Your role is assigned by workspace ownership or an invitation, never by the sign-up form."}
+              {mode === "login" && selectedRole === UserRole.ADMIN && "Full platform management: Configure pipeline stages, lead profiles, campaigns, and system parameters."}
+              {mode === "login" && selectedRole === UserRole.MARKETING_MANAGER && "Manage marketing campaigns, analyze conversion channels, and review statistical reports."}
+              {mode === "login" && selectedRole === UserRole.SALES_AGENT && "Pipeline lead movement, log client activities, update deal statuses, and follow ups."}
             </div>
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] hover:from-[#A855F7] hover:to-[#C084FC] text-white rounded-xl font-medium text-xs tracking-wide shadow-xl shadow-[#7C3AED]/15 hover:shadow-[#7C3AED]/35 transform hover:-translate-y-[1px] transition-all duration-300 flex items-center justify-center gap-1.5 font-display"
+            className="w-full py-3 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] hover:from-[#A855F7] hover:to-[#C084FC] text-white rounded-xl font-medium text-xs tracking-wide shadow-xl shadow-[#7C3AED]/15 hover:shadow-[#7C3AED]/35 transform hover:-translate-y-[1px] transition-all duration-300 flex items-center justify-center gap-1.5 font-display cursor-pointer"
           >
-            Authenticate Profile Preset <ArrowRight className="w-3.5 h-3.5" />
+            {mode === "login" ? "Enter Dashboard" : "Create account"} <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
+
+        <p className="text-center text-xs text-[#94A3B8]">
+          {mode === "login" ? "New to MIP?" : "Already have an account?"}{" "}
+          <button type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")} className="text-[#C084FC] hover:underline">
+            {mode === "login" ? "Create an account" : "Sign in"}
+          </button>
+        </p>
       </div>
 
       <div className="text-center text-[10px] text-[#94A3B8]/40 mt-8 space-y-1">
-        <p>Built by Stephen Kimaru for Ma Creatives Studio</p>
-        <p className="font-mono text-[8px] uppercase tracking-wider">MIP Sandbox Workspace Client • Security Level 3</p>
+        <p>Marketing Intelligence Platform (MIP)</p>
+        <p className="font-mono text-[8px] uppercase tracking-wider">Enterprise Revenue & Lead Management System</p>
       </div>
     </div>
   );

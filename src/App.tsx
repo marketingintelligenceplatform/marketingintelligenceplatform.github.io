@@ -8,16 +8,19 @@ import {
   FollowUp, 
   Notification, 
   UserRole, 
-  CurrentUser 
+  CurrentUser,
+  PipelineStage,
+  WorkspaceMembership,
 } from "./types";
-import { loadState, saveState, defaultLeads, defaultCampaigns, defaultFollowUps, defaultActivities, defaultNotifications } from "./dataStore";
 import { apiClient, AppState } from "./api/client";
 import LandingPage from "./components/LandingPage";
 import LoginPage from "./components/LoginPage";
+import WorkspaceSetup, { WorkspaceSetupInput } from "./components/WorkspaceSetup";
 import SidebarNav from "./components/SidebarNav";
-import { SalesFunnelWidget, LeadSourceWidget, RevenueTrendWidget } from "./components/StatsVisuals";
+import { SalesFunnelWidget, LeadSourceWidget } from "./components/StatsVisuals";
 import AnalyticsEngine from "./components/AnalyticsEngine";
 import CampaignCenter from "./components/CampaignCenter";
+import SocialContentHub from "./components/SocialContentHub";
 
 import { 
   BarChart3, 
@@ -40,7 +43,6 @@ import {
   Mail,
   Phone,
   Building,
-  User,
   Calendar,
   DollarSign,
   ArrowRight,
@@ -48,15 +50,34 @@ import {
   FileSpreadsheet,
   Send,
   Activity as ActivityIcon,
-  Menu
+  Menu,
+  Edit,
+  Trash2,
+  RotateCcw,
+  Trash
 } from "lucide-react";
+
+interface AuthSessionResponse {
+  user: CurrentUser | null;
+  workspaces: WorkspaceMembership[];
+  activeWorkspaceId: string | null;
+  token?: string;
+}
+
+interface CreateWorkspaceResponse {
+  workspace: { currency: string | null };
+  membership: WorkspaceMembership;
+}
 
 export default function App() {
   // --- SESSION STATES ---
   const [isLanding, setIsLanding] = useState<boolean>(true);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceMembership[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
 
-  // --- APPLICATION DATA STATES (Seeded from loadState) ---
+  // --- APPLICATION DATA STATES (Seeded from loadState / PostgreSQL) ---
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [followups, setFollowups] = useState<FollowUp[]>([]);
@@ -69,6 +90,10 @@ export default function App() {
   // --- INTERACTIVE SELECTORS ---
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showAddLeadModal, setShowAddLeadModal] = useState<boolean>(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [showEditLeadModal, setShowEditLeadModal] = useState<boolean>(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<boolean>(false);
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [leadFilterStage, setLeadFilterStage] = useState<string>("All");
   const [leadSearchQuery, setLeadSearchQuery] = useState<string>("");
 
@@ -87,6 +112,9 @@ export default function App() {
   // --- BACKEND API SYSTEM STATES ---
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>(UserRole.SALES_AGENT);
+  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
 
   // --- MULTI-CURRENCY STANDARD STATE ---
   const [selectedCurrency, setSelectedCurrency] = useState<string>(() => {
@@ -105,9 +133,28 @@ export default function App() {
   };
 
   const formatCurrency = (val: number): string => {
+    if (val === undefined || val === null || isNaN(val)) return "$0";
     const config = currencyRates[selectedCurrency] || currencyRates.KES;
     const converted = val * config.rate;
     return `${config.symbol} ${Math.round(converted).toLocaleString()}`;
+  };
+
+  const applyAppState = (state: AppState) => {
+    setPipelineStages(state.pipelineStages ?? []);
+    setLeads(state.leads);
+    setCampaigns(state.campaigns);
+    setFollowups(state.followups);
+    setActivities(state.activities);
+    setNotifications(state.notifications);
+  };
+
+  const clearAppState = () => {
+    setPipelineStages([]);
+    setLeads([]);
+    setCampaigns([]);
+    setFollowups([]);
+    setActivities([]);
+    setNotifications([]);
   };
 
   // Load state on startup from backend API
@@ -115,73 +162,51 @@ export default function App() {
     async function loadData() {
       setIsAuthLoading(true);
       try {
-        // 1. Fetch current authentication status with robust automatic retry on server restart/cold-start
-        let authRes: { user: CurrentUser | null } | null = null;
-        let retries = 10;
-        let delay = 400;
-        while (retries > 0) {
+        // Fast concurrent fetcher for instant load time
+        const fetchWithRetry = async <T,>(url: string, retries = 2, delay = 100): Promise<T> => {
           try {
-            authRes = await apiClient.get<{ user: CurrentUser | null }>("/api/auth/me");
-            break;
+            return await apiClient.get<T>(url);
           } catch (err) {
-            retries--;
-            if (retries === 0) {
-              console.warn("Failed to reach Auth API after 10 retries, trying final request...");
-              authRes = await apiClient.get<{ user: CurrentUser | null }>("/api/auth/me");
-            }
+            if (retries <= 1) throw err;
             await new Promise((resolve) => setTimeout(resolve, delay));
-            delay = Math.min(delay * 1.5, 2000); // progressive backoff up to 2 seconds
+            return fetchWithRetry<T>(url, retries - 1, delay * 1.5);
           }
-        }
+        };
 
-        if (authRes && authRes.user) {
-          setCurrentUser(authRes.user);
-          setIsLanding(false);
-        } else {
+        // State is protected, so it is only requested after a valid session is restored.
+        const authRes = await fetchWithRetry<AuthSessionResponse>("/api/auth/me").catch(() => ({
+          user: null,
+          workspaces: [],
+          activeWorkspaceId: null,
+        }));
+
+        if (!authRes?.user) {
           setCurrentUser(null);
+          setWorkspaces([]);
+          setActiveWorkspaceId(null);
+          clearAppState();
           setIsLanding(true);
-        }
-
-        // 2. Fetch entire state with robust automatic retry
-        let state: AppState | null = null;
-        retries = 10;
-        delay = 400;
-        while (retries > 0) {
-          try {
-            state = await apiClient.get<AppState>("/api/state");
-            break;
-          } catch (err) {
-            retries--;
-            if (retries === 0) {
-              console.warn("Failed to reach State API after 10 retries, trying final request...");
-              state = await apiClient.get<AppState>("/api/state");
-            }
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            delay = Math.min(delay * 1.5, 2000);
-          }
-        }
-
-        if (state) {
-          setLeads(state.leads);
-          setCampaigns(state.campaigns);
-          setFollowups(state.followups);
-          setActivities(state.activities);
-          setNotifications(state.notifications);
           setApiError(null);
+          return;
         }
+        const activeWorkspace = authRes.workspaces.find((workspace) => workspace.organizationId === authRes.activeWorkspaceId);
+        setCurrentUser({ ...authRes.user, role: activeWorkspace?.role ?? UserRole.ADMIN });
+        setWorkspaces(authRes.workspaces);
+        setActiveWorkspaceId(authRes.activeWorkspaceId);
+        setIsLanding(false);
+
+        if (!authRes.activeWorkspaceId) {
+          clearAppState();
+          setApiError(null);
+          return;
+        }
+
+        const state = await fetchWithRetry<AppState>("/api/state");
+        applyAppState(state);
+        setApiError(null);
       } catch (err: any) {
-        console.error("API failed on startup, using offline storage fallback:", err);
-        setApiError("Backend disconnected. Running in offline sandbox mode.");
-        
-        // Fallback
-        const state = loadState();
-        setLeads(state.leads);
-        setCampaigns(state.campaigns);
-        setFollowups(state.followups);
-        setActivities(state.activities);
-        setNotifications(state.notifications);
-        setCurrentUser(null);
-        setIsLanding(true);
+        console.error("API sync error on startup:", err);
+        setApiError("Database connection issue. Unable to sync data with PostgreSQL server.");
       } finally {
         setIsAuthLoading(false);
       }
@@ -189,42 +214,109 @@ export default function App() {
     loadData();
   }, []);
 
-  // Sync state back to local storage only as offline redundancy
-  useEffect(() => {
-    if (currentUser) {
-      saveState({
-        leads,
-        campaigns,
-        followups,
-        activities,
-        notifications,
-        user: currentUser
-      });
-    }
-  }, [leads, campaigns, followups, activities, notifications, currentUser]);
-
   // --- AUTH HANDLERS ---
-  const handleLogin = async (user: CurrentUser) => {
+  const handleLogin = async (credentials: { email: string; password: string }) => {
     setIsAuthLoading(true);
     try {
-      const loginRes = await apiClient.post<{ user: CurrentUser }>("/api/auth/login", user);
-      setCurrentUser(loginRes.user);
+      const loginRes = await apiClient.post<AuthSessionResponse>("/api/auth/login", credentials);
+      if (!loginRes.user || !loginRes.token) throw new Error("The sign-in response was incomplete.");
+      apiClient.setSessionToken(loginRes.token);
+      const activeWorkspace = loginRes.workspaces.find((workspace) => workspace.organizationId === loginRes.activeWorkspaceId);
+      setCurrentUser({ ...loginRes.user, role: activeWorkspace?.role ?? UserRole.ADMIN });
+      setWorkspaces(loginRes.workspaces);
+      setActiveWorkspaceId(loginRes.activeWorkspaceId);
       setIsLanding(false);
 
-      // Refresh state
+      if (!loginRes.activeWorkspaceId) {
+        clearAppState();
+        setApiError(null);
+        return;
+      }
+
       const state = await apiClient.get<AppState>("/api/state");
-      setLeads(state.leads);
-      setCampaigns(state.campaigns);
-      setFollowups(state.followups);
-      setActivities(state.activities);
-      setNotifications(state.notifications);
+      applyAppState(state);
       setApiError(null);
     } catch (err: any) {
-      console.error("Login API failed, falling back to sandbox mode:", err);
-      setCurrentUser(user);
-      setIsLanding(false);
+      console.error("Login API failed:", err);
+      setCurrentUser(null);
+      setIsLanding(true);
+      setApiError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {
       setIsAuthLoading(false);
+    }
+  };
+
+  const handleSignUp = async (details: { firstName: string; lastName: string; email: string; password: string }) => {
+    setIsAuthLoading(true);
+    try {
+      const signUpRes = await apiClient.post<AuthSessionResponse>("/api/auth/signup", details);
+      if (!signUpRes.user || !signUpRes.token) throw new Error("The account response was incomplete.");
+      apiClient.setSessionToken(signUpRes.token);
+      setCurrentUser({ ...signUpRes.user, role: UserRole.ADMIN });
+      setWorkspaces(signUpRes.workspaces);
+      setActiveWorkspaceId(signUpRes.activeWorkspaceId);
+      clearAppState();
+      setIsLanding(false);
+      setApiError(null);
+    } catch (err: any) {
+      console.error("Sign-up API failed:", err);
+      setApiError(err instanceof Error ? err.message : "Unable to create your account.");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleCreateWorkspace = async (input: WorkspaceSetupInput) => {
+    try {
+      const result = await apiClient.post<CreateWorkspaceResponse>("/api/workspaces", input);
+      const nextWorkspaces = [...workspaces, result.membership].sort((first, second) => first.name.localeCompare(second.name));
+      setWorkspaces(nextWorkspaces);
+      setActiveWorkspaceId(result.membership.organizationId);
+      setCurrentUser((user) => user ? { ...user, role: result.membership.role } : user);
+      if (result.workspace.currency) {
+        setSelectedCurrency(result.workspace.currency);
+        localStorage.setItem("mip_currency", result.workspace.currency);
+      }
+      applyAppState(await apiClient.get<AppState>("/api/state"));
+      setApiError(null);
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : "Unable to create the workspace.";
+      setApiError(message);
+      throw err;
+    }
+  };
+
+  const handleWorkspaceSelect = async (workspaceId: string) => {
+    if (workspaceId === activeWorkspaceId) return;
+    try {
+      const result = await apiClient.post<{ workspace: WorkspaceMembership }>(`/api/workspaces/${workspaceId}/select`);
+      setActiveWorkspaceId(result.workspace.organizationId);
+      setCurrentUser((user) => user ? { ...user, role: result.workspace.role } : user);
+      applyAppState(await apiClient.get<AppState>("/api/state"));
+      setActiveTab("dashboard");
+      setApiError(null);
+    } catch (err: any) {
+      console.error("Workspace switch failed:", err);
+      setApiError(err instanceof Error ? err.message : "Unable to switch workspaces.");
+    }
+  };
+
+  const handleInviteMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeWorkspaceId) return;
+    try {
+      const invitation = await apiClient.post<{ email: string; inviteUrl: string | null }>(
+        `/api/workspaces/${activeWorkspaceId}/invitations`,
+        { email: inviteEmail, role: inviteRole },
+      );
+      setInviteEmail("");
+      setInviteFeedback(invitation.inviteUrl
+        ? `Invitation created for ${invitation.email}. Development link: ${invitation.inviteUrl}`
+        : `Invitation created for ${invitation.email}. Configure an outbox email worker before production delivery.`);
+      setApiError(null);
+    } catch (err: any) {
+      setInviteFeedback(null);
+      setApiError(err instanceof Error ? err.message : "Unable to create the invitation.");
     }
   };
 
@@ -236,8 +328,12 @@ export default function App() {
       console.error("Logout API failed:", err);
     } finally {
       setCurrentUser(null);
+      setWorkspaces([]);
+      setActiveWorkspaceId(null);
+      clearAppState();
       setIsLanding(true);
       setIsAuthLoading(false);
+      apiClient.clearSessionToken();
       localStorage.removeItem("mip_user_v1");
     }
   };
@@ -246,157 +342,82 @@ export default function App() {
   const handleAddLead = async (newLead: Omit<Lead, "id" | "dateCreated" | "lastUpdated">) => {
     try {
       const updatedState = await apiClient.post<AppState>("/api/leads", newLead);
-      setLeads(updatedState.leads);
-      setCampaigns(updatedState.campaigns);
-      setFollowups(updatedState.followups);
-      setActivities(updatedState.activities);
-      setNotifications(updatedState.notifications);
+      applyAppState(updatedState);
       setApiError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to add lead on backend:", err);
-      setApiError("Failed to add lead on server. Using fallback.");
-      
-      // Fallback
-      const fullLead: Lead = {
-        ...newLead,
-        id: `lead-${Date.now()}`,
-        dateCreated: new Date().toISOString().split("T")[0],
-        lastUpdated: new Date().toISOString().split("T")[0]
-      };
-      setLeads([fullLead, ...leads]);
+      setApiError(err instanceof Error ? err.message : "Failed to add lead on the server.");
+    }
+  };
 
-      const auditLog: Activity = {
-        id: `act-${Date.now()}`,
-        type: "System Update",
-        leadId: fullLead.id,
-        leadName: fullLead.name,
-        description: `New lead created at stage "${fullLead.stage}" with dynamic contract score of ${fullLead.leadScore}.`,
-        performer: currentUser?.name || "System Automation",
-        timestamp: new Date().toISOString()
-      };
-      setActivities([auditLog, ...activities]);
+  const handleEditLead = async (leadId: string, updatedFields: Partial<Lead>) => {
+    try {
+      const updatedState = await apiClient.put<AppState>(`/api/leads/${leadId}`, updatedFields);
+      applyAppState(updatedState);
+      setApiError(null);
+      if (selectedLead && selectedLead.id === leadId) {
+        setSelectedLead({ ...selectedLead, ...updatedFields });
+      }
+    } catch (err: any) {
+      console.error("Failed to edit lead on backend:", err);
+      setApiError(err instanceof Error ? err.message : "Failed to update the lead on the server.");
+    }
+  };
 
-      const newNotify: Notification = {
-        id: `n-${Date.now()}`,
-        title: "Inbound Sourcing Alert",
-        message: `${fullLead.company} (${fullLead.name}) generated dynamic CRM scores of ${fullLead.leadScore}/100.`,
-        type: "success",
-        isRead: false,
-        time: new Date().toISOString()
-      };
-      setNotifications([newNotify, ...notifications]);
+  const handleDeleteLead = async (leadId: string) => {
+    try {
+      const updatedState = await apiClient.delete<AppState>(`/api/leads/${leadId}`);
+      applyAppState(updatedState);
+      if (selectedLead && selectedLead.id === leadId) {
+        setSelectedLead(null);
+      }
+      setApiError(null);
+    } catch (err: any) {
+      console.error("Failed to delete lead on backend:", err);
+      setApiError(err instanceof Error ? err.message : "Failed to delete the lead on the server.");
+    }
+  };
+
+  const handleClearDatastore = async () => {
+    try {
+      const updatedState = await apiClient.post<AppState>("/api/leads/clear-datastore");
+      applyAppState(updatedState);
+      setSelectedLead(null);
+      setApiError(null);
+    } catch (err: any) {
+      console.error("Failed to clear datastore:", err);
+      setApiError(err instanceof Error ? err.message : "Failed to clear CRM records on the server.");
     }
   };
 
   const handleUpdateLeadStage = async (leadId: string, targetStage: FunnelStage) => {
-    const previous = leads.find(l => l.id === leadId);
-    if (!previous) return;
-
     try {
       const updatedState = await apiClient.patch<AppState>(`/api/leads/${leadId}/stage`, { stage: targetStage });
-      setLeads(updatedState.leads);
-      setCampaigns(updatedState.campaigns);
-      setFollowups(updatedState.followups);
-      setActivities(updatedState.activities);
-      setNotifications(updatedState.notifications);
+      applyAppState(updatedState);
       setApiError(null);
 
       // Refresh focus details in side nav dynamically
       if (selectedLead && selectedLead.id === leadId) {
         setSelectedLead({ ...selectedLead, stage: targetStage });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update stage on backend:", err);
-      setApiError("Stage update failed on server. Using fallback.");
-
-      // Fallback
-      const oldStage = previous.stage;
-      const stageTransitionNotes = `Transitioned funnel stage path from [${oldStage}] to [${targetStage}].`;
-
-      setLeads(leads.map(l => {
-        if (l.id === leadId) {
-          return {
-            ...l,
-            stage: targetStage,
-            lastUpdated: new Date().toISOString().split("T")[0]
-          };
-        }
-        return l;
-      }));
-
-      const auditLog: Activity = {
-        id: `act-${Date.now()}`,
-        type: "System Update",
-        leadId: leadId,
-        leadName: previous.name,
-        description: stageTransitionNotes,
-        performer: currentUser?.name || "System Automation",
-        timestamp: new Date().toISOString()
-      };
-      setActivities([auditLog, ...activities]);
-
-      if (targetStage === FunnelStage.WON) {
-        setCampaigns(campaigns.map(camp => {
-          if (camp.name.toLowerCase().includes("linkedin") && previous.source === LeadSource.LINKEDIN) {
-            return { ...camp, conversions: camp.conversions + 1 };
-          }
-          if (camp.name.toLowerCase().includes("seo") && previous.source === LeadSource.GOOGLE) {
-            return { ...camp, conversions: camp.conversions + 1 };
-          }
-          return camp;
-        }));
-
-        const milestoneNotify: Notification = {
-          id: `n-${Date.now()}`,
-          title: "Closed Won Deal Smashed",
-          message: `${previous.company} finalized contract of $${previous.value.toLocaleString()}!`,
-          type: "success",
-          isRead: false,
-          time: new Date().toISOString()
-        };
-        setNotifications([milestoneNotify, ...notifications]);
-      }
-
-      if (selectedLead && selectedLead.id === leadId) {
-        setSelectedLead({ ...selectedLead, stage: targetStage });
-      }
+      setApiError(err instanceof Error ? err.message : "Failed to update the lead stage on the server.");
     }
   };
 
   const handleLogLeadActivity = async (leadId: string, description: string, type: any) => {
-    const parentLead = leads.find(l => l.id === leadId);
-    if (!parentLead) return;
-
     try {
       const updatedState = await apiClient.post<AppState>(`/api/leads/${leadId}/activities`, { type, description });
-      setLeads(updatedState.leads);
-      setCampaigns(updatedState.campaigns);
-      setFollowups(updatedState.followups);
-      setActivities(updatedState.activities);
-      setNotifications(updatedState.notifications);
+      applyAppState(updatedState);
       setApiError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to log activity on backend:", err);
-      setApiError("Failed to save activity on server.");
-
-      // Fallback
-      const newAct: Activity = {
-        id: `act-${Date.now()}`,
-        type: type,
-        leadId: leadId,
-        leadName: parentLead.name,
-        description: description,
-        performer: currentUser?.name || "Client Operator",
-        timestamp: new Date().toISOString()
-      };
-      setActivities([newAct, ...activities]);
+      setApiError(err instanceof Error ? err.message : "Failed to save the activity on the server.");
     }
   };
 
   const handleCreateLeadFollowup = async (leadId: string, notes: string, scheduledTime: string, type: any, priority: any) => {
-    const parentLead = leads.find(l => l.id === leadId);
-    if (!parentLead) return;
-
     try {
       const updatedState = await apiClient.post<AppState>(`/api/leads/${leadId}/followups`, {
         type,
@@ -404,38 +425,11 @@ export default function App() {
         notes,
         priority
       });
-      setLeads(updatedState.leads);
-      setCampaigns(updatedState.campaigns);
-      setFollowups(updatedState.followups);
-      setActivities(updatedState.activities);
-      setNotifications(updatedState.notifications);
+      applyAppState(updatedState);
       setApiError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to create followup on backend:", err);
-      setApiError("Failed to save followup on server.");
-
-      // Fallback
-      const newFollow: FollowUp = {
-        id: `f-${Date.now()}`,
-        leadId: leadId,
-        leadName: parentLead.name,
-        notes: notes,
-        scheduledTime: scheduledTime,
-        type: type,
-        priority: priority,
-        status: "Pending"
-      };
-      setFollowups([newFollow, ...followups]);
-
-      const schedulerNotify: Notification = {
-        id: `n-${Date.now()}`,
-        title: "Follow-up Scheduled",
-        message: `Follow-up ${type} with ${parentLead.name} scheduled for ${scheduledTime}.`,
-        type: "info",
-        isRead: false,
-        time: new Date().toISOString()
-      };
-      setNotifications([schedulerNotify, ...notifications]);
+      setApiError(err instanceof Error ? err.message : "Failed to save the follow-up on the server.");
     }
   };
 
@@ -443,26 +437,11 @@ export default function App() {
   const handleAddNewCampaign = async (newCamp: Omit<Campaign, "id" | "leadsCount" | "conversions" | "clicks" | "impressions">) => {
     try {
       const updatedState = await apiClient.post<AppState>("/api/campaigns", newCamp);
-      setLeads(updatedState.leads);
-      setCampaigns(updatedState.campaigns);
-      setFollowups(updatedState.followups);
-      setActivities(updatedState.activities);
-      setNotifications(updatedState.notifications);
+      applyAppState(updatedState);
       setApiError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to add campaign on backend:", err);
-      setApiError("Failed to create campaign on server.");
-
-      // Fallback
-      const fullCamp: Campaign = {
-        ...newCamp,
-        id: `camp-${Date.now()}`,
-        leadsCount: 0,
-        conversions: 0,
-        clicks: 450,
-        impressions: 4000
-      };
-      setCampaigns([...campaigns, fullCamp]);
+      setApiError(err instanceof Error ? err.message : "Failed to create the campaign on the server.");
     }
   };
 
@@ -483,23 +462,9 @@ export default function App() {
     setIsAiLoading(true);
     setAiResponse("");
 
-    // Prepare full unified snapshot metrics to assist grounding
-    const dashboardState = {
-      totalLeads: leads.length,
-      activeLeads: leads.filter(l => ![FunnelStage.WON, FunnelStage.LOST].includes(l.stage)).length,
-      conversionRate: `${Math.round((leads.filter(l => l.stage === FunnelStage.WON).length / (leads.filter(l => [FunnelStage.WON, FunnelStage.LOST].includes(l.stage)).length || 1)) * 100)}%`,
-      wonDeals: leads.filter(l => l.stage === FunnelStage.WON).length,
-      revenueGenerated: `$${leads.filter(l => l.stage === FunnelStage.WON).reduce((sum, l) => sum + l.value, 0).toLocaleString()}`,
-      summaryContext: {
-        activeLeadsDetails: leads.map(l => ({ name: l.name, company: l.company, score: l.leadScore, value: l.value, stage: l.stage })),
-        campaignBudgetSplits: campaigns.map(c => ({ name: c.name, spent: c.spent, budget: c.budget, score: c.status }))
-      }
-    };
-
     try {
       const resData = await apiClient.post<{ text: string; isMock: boolean }>("/api/ai/query", {
         prompt: finalPrompt,
-        dashboardState
       });
       setAiResponse(resData.text);
       setIsAiMocked(resData.isMock);
@@ -523,8 +488,8 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0B14] text-white p-4 space-y-4">
         <div className="w-10 h-10 rounded-full border-2 border-[#7C3AED] border-t-transparent animate-spin" />
         <div className="space-y-1 text-center">
-          <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest animate-pulse">Establishing Secure Uplink...</p>
-          <span className="text-[11px] text-[#A78BFA]/50 block font-mono">Ma Creatives Studio Platform</span>
+          <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest animate-pulse">Loading Marketing Intelligence Platform...</p>
+          <span className="text-[11px] text-[#A78BFA]/50 block font-mono">MIP Enterprise Operating System</span>
         </div>
       </div>
     );
@@ -535,7 +500,11 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
   }
 
   if (!currentUser) {
-    return <LoginPage onLoginSuccess={handleLogin} onBackToLanding={() => setIsLanding(true)} />;
+    return <LoginPage onLoginSuccess={handleLogin} onSignUp={handleSignUp} onBackToLanding={() => setIsLanding(true)} error={apiError} />;
+  }
+
+  if (!activeWorkspaceId) {
+    return <WorkspaceSetup onCreate={handleCreateWorkspace} onLogout={handleLogout} error={apiError} />;
   }
 
   // --- DYNAMIC CALCULATED DASHBOARD KPIs ---
@@ -584,6 +553,9 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
           onLogout={handleLogout}
           unreadCount={unreadCount}
           onClose={() => setMobileMenuOpen(false)}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onWorkspaceSelect={handleWorkspaceSelect}
         />
       </div>
 
@@ -607,6 +579,7 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
               {activeTab === "dashboard" && "Analytics Intelligence Dashboard"}
               {activeTab === "leads" && "Lead Profiles Manager CRM"}
               {activeTab === "pipeline" && "Visual Funnel Pipeline"}
+              {activeTab === "social" && "Social Media Content & Conversion Hub"}
               {activeTab === "campaigns" && "Sourcing Campaign Coordinator & ROI Engine"}
               {activeTab === "analytics" && "Decision Statistics Workspace"}
               {activeTab === "settings" && "Enterprise Space Config"}
@@ -718,6 +691,12 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
 
         {/* Outer view frame viewport wrapper */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+          {apiError && (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-400/25 bg-rose-950/30 px-4 py-3 text-xs text-rose-100">
+              <span>{apiError}</span>
+              <button onClick={() => setApiError(null)} className="text-rose-200 hover:text-white">Dismiss</button>
+            </div>
+          )}
           
           {/* 1. VIEW PORT: CORES DASHBOARD OVERVIEW */}
           {activeTab === "dashboard" && (
@@ -727,42 +706,41 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 
                 <div className="bg-[#1F1830] border border-white/5 p-4 rounded-2xl space-y-1.5 relative overflow-hidden group">
-                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Gross Sourced Leads</span>
+                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Total Leads</span>
                   <p className="text-2xl font-bold font-display text-white">{totalLeadsCount}</p>
-                  <span className="text-[9px] text-[#C084FC] block font-mono">Captured DB accounts</span>
+                  <span className="text-[9px] text-[#C084FC] block font-mono">Total in system</span>
                 </div>
 
                 <div className="bg-[#1F1830] border border-white/5 p-4 rounded-2xl space-y-1.5 relative overflow-hidden group">
-                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Active Pipeline</span>
+                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Active Deals</span>
                   <p className="text-2xl font-bold font-display text-white">{activeLeadsCount}</p>
-                  <span className="text-[9px] text-emerald-400 block font-mono">Negotiation rate high</span>
+                  <span className="text-[9px] text-emerald-400 block font-mono">In progress</span>
                 </div>
 
                 <div className="bg-[#1F1830] border border-white/5 p-4 rounded-2xl space-y-1.5 relative overflow-hidden group">
-                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Closed Won Sells</span>
+                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Won Deals</span>
                   <p className="text-2xl font-bold font-display text-emerald-400">{wonCount}</p>
-                  <span className="text-[9px] text-gray-400 block font-mono">Avg score: 91/100</span>
+                  <span className="text-[9px] text-gray-400 block font-mono">Successfully closed</span>
                 </div>
 
                 <div className="bg-[#1F1830] border border-white/5 p-4 rounded-2xl space-y-1.5 relative overflow-hidden group">
-                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Yield Portfolio ARR</span>
+                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Won Revenue</span>
                   <p className="text-2xl font-bold font-display text-[#C084FC]">{formatCurrency(grossARRResult)}</p>
-                  <span className="text-[9px] text-emerald-400 block font-mono">Contracts validated</span>
+                  <span className="text-[9px] text-emerald-400 block font-mono">Closed deal value</span>
                 </div>
 
                 <div className="bg-[#1F1830] border border-white/5 p-4 rounded-2xl space-y-1.5 col-span-2 md:col-span-1 border-l-[#7C3AED] relative overflow-hidden group">
-                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Consolidated Win Ratio</span>
+                  <span className="text-[10px] text-gray-400 block uppercase font-mono tracking-wider">Win Rate</span>
                   <p className="text-2xl font-bold font-display text-[#C084FC]">{aggregateWinRatio}%</p>
-                  <span className="text-[9px] text-gray-400 block font-mono">Conversion index</span>
+                  <span className="text-[9px] text-gray-400 block font-mono">Won vs. Lost ratio</span>
                 </div>
 
               </div>
 
               {/* Graphical trends breakdowns */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <SalesFunnelWidget leads={leads} />
                 <LeadSourceWidget leads={leads} />
-                <RevenueTrendWidget leads={leads} formatCurrency={formatCurrency} />
               </div>
 
               {/* Lower panels: Recent tasks followups & dynamic CRM activity feed */}
@@ -773,26 +751,30 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                   <div className="flex justify-between items-center border-b border-white/5 pb-2">
                     <div className="flex items-center space-x-2">
                       <Clock className="w-4 h-4 text-[#C084FC]" />
-                      <h3 className="font-display font-semibold text-xs text-white">Pending High-Priority Client Tasks</h3>
+                      <h3 className="font-display font-semibold text-xs text-white">Upcoming Tasks & Follow-ups</h3>
                     </div>
-                    <span className="font-mono text-[9px] bg-[#7C3AED]/10 text-[#C084FC] px-2 py-0.5 rounded-full">CRM Calendar</span>
+                    <span className="font-mono text-[9px] bg-[#7C3AED]/10 text-[#C084FC] px-2 py-0.5 rounded-full">Calendar</span>
                   </div>
 
                   <div className="space-y-3">
-                    {followups.filter(f => f.status === "Pending").slice(0, 4).map((f) => (
-                      <div key={f.id} className="p-3 bg-[#161122]/60 rounded-xl border border-white/5 flex justify-between items-center text-[11px] hover:border-white/10 transition-colors">
-                        <div className="space-y-1">
-                          <strong className="text-white block font-display">{f.leadName} ({f.type})</strong>
-                          <span className="text-gray-400 block leading-tight">{f.notes}</span>
-                          <span className="text-[9px] font-mono text-gray-500 block">Scheduled Target: {f.scheduledTime.replace("T", " ")}</span>
+                    {followups.filter(f => f.status === "Pending").length === 0 ? (
+                      <p className="text-xs text-gray-500 py-4 text-center">No pending follow-ups scheduled.</p>
+                    ) : (
+                      followups.filter(f => f.status === "Pending").slice(0, 4).map((f) => (
+                        <div key={f.id} className="p-3 bg-[#161122]/60 rounded-xl border border-white/5 flex justify-between items-center text-[11px] hover:border-white/10 transition-colors">
+                          <div className="space-y-1">
+                            <strong className="text-white block font-display">{f.leadName} ({f.type})</strong>
+                            <span className="text-gray-400 block leading-tight">{f.notes}</span>
+                            <span className="text-[9px] font-mono text-gray-500 block">Scheduled: {f.scheduledTime.replace("T", " ")}</span>
+                          </div>
+                          <span className={`text-[8.5px] px-2 py-0.5 rounded-full uppercase font-mono ${
+                            f.priority === "High" ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" : "bg-blue-500/10 text-blue-400"
+                          }`}>
+                            {f.priority}
+                          </span>
                         </div>
-                        <span className={`text-[8.5px] px-2 py-0.5 rounded-full uppercase font-mono ${
-                          f.priority === "High" ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" : "bg-blue-500/10 text-blue-400"
-                        }`}>
-                          {f.priority}
-                        </span>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -801,9 +783,9 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                   <div className="flex justify-between items-center border-b border-white/5 pb-2">
                     <div className="flex items-center space-x-2">
                       <ActivityIcon className="w-4 h-4 text-[#C084FC]" />
-                      <h3 className="font-display font-semibold text-xs text-white">CRM Audit Trail Activities logs</h3>
+                      <h3 className="font-display font-semibold text-xs text-white">Recent Activity Stream</h3>
                     </div>
-                    <span className="font-mono text-[9px] text-[#94A3B8]">Continuous feed</span>
+                    <span className="font-mono text-[9px] text-[#94A3B8]">Live updates</span>
                   </div>
 
                   <div className="space-y-3">
@@ -866,13 +848,28 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                   </div>
                 </div>
 
-                {/* Primary Add Lead Action */}
-                <button
-                  onClick={() => setShowAddLeadModal(true)}
-                  className="px-4 py-2 bg-[#7C3AED] hover:bg-[#8B5CF6] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus className="w-4 h-4" /> Add Lead Profile
-                </button>
+                {/* Primary Add Lead & Clear Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {leads.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (confirm("Are you sure you want to clear all transactional records? This will leave a completely empty pipeline.")) {
+                          handleClearDatastore();
+                        }
+                      }}
+                      title="Clear datastore records"
+                      className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Clear Data</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAddLeadModal(true)}
+                    className="px-4 py-2 bg-[#7C3AED] hover:bg-[#8B5CF6] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#7C3AED]/20 transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Add Lead Profile
+                  </button>
+                </div>
 
               </div>
 
@@ -880,9 +877,12 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
               {showAddLeadModal && (
                 <div className="fixed inset-0 bg-[#0D0B14]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                   <div className="bg-[#161122] border border-[#7C3AED]/40 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
-                    <div className="border-b border-[#1F1830] pb-3">
-                      <h3 className="font-display font-semibold text-sm text-white">Create Lead Profile Entry</h3>
-                      <p className="text-[11px] text-gray-400">Initialize a new sales prospect record in the MIP database.</p>
+                    <div className="border-b border-[#1F1830] pb-3 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-display font-semibold text-sm text-white">Create Lead Profile Entry</h3>
+                        <p className="text-[11px] text-gray-400">Initialize a new sales prospect record in the MIP database.</p>
+                      </div>
+                      <button onClick={() => setShowAddLeadModal(false)} className="text-gray-400 hover:text-white text-xs p-1">✕</button>
                     </div>
 
                     {/* Standard creator fields */}
@@ -893,10 +893,12 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                       const companyStr = fd.get("company") as string;
                       const emailStr = fd.get("email") as string;
                       const phoneStr = fd.get("phone") as string;
-                      const valNum = parseInt(fd.get("value") as string) || 5000;
+                      const currentRate = (currencyRates[selectedCurrency] || currencyRates.KES).rate;
+                      const rawInputVal = parseInt(fd.get("value") as string) || 1500;
+                      const valNum = rawInputVal / currentRate;
                       const stageSel = fd.get("stage") as FunnelStage;
                       const sourceSel = fd.get("source") as LeadSource;
-                      const scoreNum = Math.floor(Math.random() * 30) + 60; // Dynamic starter score
+                      const scoreNum = 0;
                       
                       handleAddLead({
                         name: nameStr,
@@ -932,7 +934,7 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-gray-400 uppercase">Expected Deal Value ({selectedCurrency})</label>
-                          <input type="number" name="value" defaultValue={15000} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                          <input type="number" name="value" defaultValue={1500} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-gray-400 uppercase">funnel placement</label>
@@ -965,6 +967,131 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                 </div>
               )}
 
+              {/* Lead Editor dialog overlay */}
+              {showEditLeadModal && editingLead && (
+                <div className="fixed inset-0 bg-[#0D0B14]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-[#161122] border border-[#7C3AED]/40 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
+                    <div className="border-b border-[#1F1830] pb-3 flex justify-between items-center">
+                      <div>
+                        <h3 className="font-display font-semibold text-sm text-white">Edit Lead Profile Entry</h3>
+                        <p className="text-[11px] text-gray-400">Update contact info, pipeline stage, or sourcing details.</p>
+                      </div>
+                      <button onClick={() => setShowEditLeadModal(false)} className="text-gray-400 hover:text-white text-xs p-1">✕</button>
+                    </div>
+
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      const currentRate = (currencyRates[selectedCurrency] || currencyRates.KES).rate;
+                      const rawInputVal = parseInt(fd.get("value") as string) || 0;
+                      const valNum = rawInputVal / currentRate;
+
+                      handleEditLead(editingLead.id, {
+                        name: fd.get("name") as string,
+                        company: fd.get("company") as string,
+                        email: fd.get("email") as string,
+                        phone: fd.get("phone") as string,
+                        value: valNum,
+                        stage: fd.get("stage") as FunnelStage,
+                        source: fd.get("source") as LeadSource,
+                        leadScore: parseInt(fd.get("score") as string) || 50,
+                        notes: fd.get("notes") as string || ""
+                      });
+                      setShowEditLeadModal(false);
+                    }} className="space-y-4">
+                      
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Contact Name</label>
+                          <input type="text" name="name" defaultValue={editingLead.name} required className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Company Entity</label>
+                          <input type="text" name="company" defaultValue={editingLead.company} required className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Primary Email Address</label>
+                          <input type="email" name="email" defaultValue={editingLead.email} required className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Phone contact</label>
+                          <input type="tel" name="phone" defaultValue={editingLead.phone} required className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Expected Deal Value ({selectedCurrency})</label>
+                          <input type="number" name="value" defaultValue={Math.round((editingLead.value || 0) * (currencyRates[selectedCurrency] || currencyRates.KES).rate)} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Lead Score (0-100)</label>
+                          <input type="number" min="0" max="100" name="score" defaultValue={editingLead.leadScore} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">funnel placement</label>
+                          <select name="stage" defaultValue={editingLead.stage} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white focus:outline-none">
+                            {Object.values(FunnelStage).map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-400 uppercase">Acquisition Channel</label>
+                          <select name="source" defaultValue={editingLead.source} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white focus:outline-none">
+                            {Object.values(LeadSource).map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-[10px] text-gray-400 uppercase">Sourcing profile notes</label>
+                          <textarea name="notes" defaultValue={editingLead.notes} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-white h-16 resize-none" />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-3.5 pt-3">
+                        <button type="button" onClick={() => setShowEditLeadModal(false)} className="px-4 py-2 bg-white/5 text-gray-400 rounded-xl text-xs">
+                          Cancel
+                        </button>
+                        <button type="submit" className="px-5 py-2 bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white rounded-xl text-xs font-semibold">
+                          Update Profile
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Lead Delete Confirm dialog overlay */}
+              {showDeleteConfirmModal && leadToDelete && (
+                <div className="fixed inset-0 bg-[#0D0B14]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-[#161122] border border-rose-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+                    <div className="flex items-center space-x-3 text-rose-400">
+                      <Trash2 className="w-6 h-6 shrink-0" />
+                      <h3 className="font-display font-semibold text-base text-white">Delete Lead Profile</h3>
+                    </div>
+                    <p className="text-xs text-gray-300 leading-relaxed">
+                      Are you sure you want to delete <strong className="text-white">{leadToDelete.name}</strong> from <strong className="text-white">{leadToDelete.company}</strong>? This action will permanently remove the record.
+                    </p>
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button 
+                        onClick={() => {
+                          setShowDeleteConfirmModal(false);
+                          setLeadToDelete(null);
+                        }} 
+                        className="px-4 py-2 bg-white/5 text-gray-400 hover:text-white rounded-xl text-xs"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          handleDeleteLead(leadToDelete.id);
+                          setShowDeleteConfirmModal(false);
+                          setLeadToDelete(null);
+                        }} 
+                        className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold transition-colors"
+                      >
+                        Delete Lead
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Split screen: left holds table search, right holds detailed selections */}
               <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
                 
@@ -980,12 +1107,23 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                           <th className="p-4 text-center">Score index</th>
                           <th className="p-4">Assignee</th>
                           <th className="p-4">Sourcing channel</th>
+                          <th className="p-4 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#1F1830]">
                         {filteredGridLeads.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="p-8 text-center text-gray-500 font-mono">No matching leads discovered in current filters.</td>
+                            <td colSpan={7} className="p-8 text-center text-gray-500 font-mono">
+                              <div className="space-y-2">
+                                <p className="text-gray-400">No leads found in pipeline.</p>
+                                <button
+                                  onClick={() => setShowAddLeadModal(true)}
+                                  className="inline-flex items-center gap-1 text-[#C084FC] hover:underline text-xs"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Add Lead Profile Entry
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         ) : (
                           filteredGridLeads.map((lead) => {
@@ -1026,6 +1164,32 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                                 <td className="p-4 text-gray-400 font-mono text-[10px]">
                                   {lead.source.split(" ")[0]}
                                 </td>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end space-x-1">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingLead(lead);
+                                        setShowEditLeadModal(true);
+                                      }}
+                                      className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+                                      title="Edit lead profile"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setLeadToDelete(lead);
+                                        setShowDeleteConfirmModal(true);
+                                      }}
+                                      className="p-1.5 hover:bg-rose-500/20 rounded-lg text-gray-400 hover:text-rose-400 transition-colors"
+                                      title="Delete lead profile"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })
@@ -1048,10 +1212,34 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                             <p className="text-[11px] text-[#94A3B8]">{selectedLead.company}</p>
                           </div>
                           
-                          {/* CRM dynamic matching evaluation score */}
-                          <div className="bg-[#7C3AED]/10 text-center border border-[#7C3AED]/25 px-2.5 py-1 rounded-xl">
-                            <span className="text-[8px] uppercase tracking-wide text-gray-400 block font-mono">Conversion Score</span>
-                            <span className="font-mono text-xs font-bold text-[#C084FC]">{selectedLead.leadScore}%</span>
+                          <div className="flex items-center space-x-2">
+                            {/* CRM dynamic matching evaluation score */}
+                            <div className="bg-[#7C3AED]/10 text-center border border-[#7C3AED]/25 px-2.5 py-1 rounded-xl">
+                              <span className="text-[8px] uppercase tracking-wide text-gray-400 block font-mono">Conversion Score</span>
+                              <span className="font-mono text-xs font-bold text-[#C084FC]">{selectedLead.leadScore}%</span>
+                            </div>
+
+                            {/* Quick edit & delete buttons */}
+                            <button
+                              onClick={() => {
+                                setEditingLead(selectedLead);
+                                setShowEditLeadModal(true);
+                              }}
+                              className="p-1.5 bg-[#0D0B14] hover:bg-[#7C3AED]/20 border border-white/5 hover:border-[#7C3AED]/40 rounded-lg text-gray-400 hover:text-white transition-colors"
+                              title="Edit lead"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setLeadToDelete(selectedLead);
+                                setShowDeleteConfirmModal(true);
+                              }}
+                              className="p-1.5 bg-[#0D0B14] hover:bg-rose-500/20 border border-white/5 hover:border-rose-500/40 rounded-lg text-gray-400 hover:text-rose-400 transition-colors"
+                              title="Delete lead"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
@@ -1262,6 +1450,30 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
             </div>
           )}
 
+          {/* VIEW PORT: SOCIAL MEDIA CONTENT & CONVERSION HUB */}
+          {activeTab === "social" && (
+            <SocialContentHub 
+              leads={leads}
+              formatCurrency={formatCurrency}
+              selectedCurrency={selectedCurrency}
+              onAddLeadFromSocial={(leadData) => {
+                const currentRate = (currencyRates[selectedCurrency] || currencyRates.KES).rate;
+                handleAddLead({
+                  name: leadData.name || "Social Lead",
+                  email: leadData.email || "social@lead.com",
+                  phone: "+254 700 000 000",
+                  company: leadData.company || "Social Network Lead",
+                  stage: FunnelStage.QUALIFIED,
+                  source: LeadSource.LINKEDIN,
+                  value: (leadData.value || 1500) / currentRate,
+                  leadScore: 85,
+                  assignee: "usr-1",
+                  notes: leadData.notes || "Converted from social comment intent."
+                });
+              }}
+            />
+          )}
+
           {/* 4. VIEW PORT: MARKETING CAMPAIGNS HUB */}
           {activeTab === "campaigns" && (
             <CampaignCenter 
@@ -1282,42 +1494,30 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
           {activeTab === "settings" && (
             <div className="space-y-6 animate-in fade-in duration-300 max-w-3xl">
               
-              {/* Preset Role authentication swap panel */}
-              <div className="bg-[#1F1830] border border-white/5 rounded-2xl p-6 space-y-4 shadow-xl">
-                <div>
-                  <h3 className="font-display font-semibold text-sm text-white">Permission Authorization presets</h3>
-                  <p className="text-xs text-[#94A3B8]">Swap mock environment user personas instantly to verify gated interfaces.</p>
+              {currentUser.role === UserRole.ADMIN && (
+                <div className="bg-[#1F1830] border border-white/5 rounded-2xl p-6 space-y-4 shadow-xl">
+                  <div>
+                    <h3 className="font-display font-semibold text-sm text-white">Invite team member</h3>
+                    <p className="text-xs text-[#94A3B8]">Roles are assigned through workspace memberships, not browser-side profile switching.</p>
+                  </div>
+                  <form onSubmit={handleInviteMember} className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] text-gray-400 uppercase font-mono">Work email</span>
+                      <input type="email" required value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@k10.com" className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-xs text-gray-300 focus:outline-none focus:border-[#7C3AED]/60" />
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] text-gray-400 uppercase font-mono">Workspace role</span>
+                      <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as UserRole)} className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-xs text-gray-300 focus:outline-none focus:border-[#7C3AED]/60">
+                        <option value={UserRole.ADMIN}>Admin</option>
+                        <option value={UserRole.MARKETING_MANAGER}>Marketing Manager</option>
+                        <option value={UserRole.SALES_AGENT}>Sales Agent</option>
+                      </select>
+                    </label>
+                    <button className="rounded-xl bg-[#7C3AED] px-4 py-2 text-xs font-semibold text-white hover:bg-[#8B5CF6]">Send invite</button>
+                  </form>
+                  {inviteFeedback && <p className="break-all rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs text-emerald-100">{inviteFeedback}</p>}
                 </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  {(Object.values(UserRole) as UserRole[]).map((role) => {
-                    const active = currentUser.role === role;
-                    return (
-                      <button
-                        key={role}
-                        onClick={() => {
-                          const name = role === UserRole.ADMIN ? "Stephen Kimaru" : role === UserRole.MARKETING_MANAGER ? "Sarah Connor" : "Alex Cooper";
-                          const email = role === UserRole.ADMIN ? "macreatives.global@gmail.com" : role === UserRole.MARKETING_MANAGER ? "sconnor@macreatives.com" : "acooper@macreatives.com";
-                          setCurrentUser({
-                            name,
-                            email,
-                            role,
-                            avatar: name.split(" ").map(w => w[0]).join("")
-                          });
-                        }}
-                        className={`p-3 rounded-xl border text-[11px] font-medium leading-none font-display flex flex-col items-center justify-center space-y-1.5 transition-all text-center ${
-                          active 
-                            ? "bg-[#7C3AED]/20 border-[#7C3AED] text-[#C084FC]"
-                            : "bg-[#161122]/60 border-white/5 text-gray-400 hover:bg-[#1F1830]"
-                        }`}
-                      >
-                        <User className="w-3.5 h-3.5" />
-                        <span>{role}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              )}
 
               {/* Integrations field models: WhatsApp / Email */}
               <div className="bg-[#1F1830] border border-white/5 rounded-2xl p-6 space-y-4 shadow-xl">
@@ -1335,6 +1535,33 @@ MIP failed to connect to the Express background proxy. Ensure the server is acti
                     <label className="text-[10px] text-gray-400 uppercase font-mono">SMTP Email Relaying credentials</label>
                     <input type="text" defaultValue="smtp.macreatives.relay-server.net:587" className="w-full bg-[#0D0B14] border border-white/5 py-2 px-3 rounded-xl text-gray-300 font-mono text-[11px]" />
                   </div>
+                </div>
+              </div>
+
+              {/* Database Administration: Clean Slate */}
+              <div className="bg-[#1F1830] border border-rose-500/30 rounded-2xl p-6 space-y-4 shadow-xl">
+                <div>
+                  <h3 className="font-display font-semibold text-sm text-white flex items-center gap-2">
+                    <Trash className="w-4 h-4 text-rose-400" />
+                    Datastore Administration & Clean Slate
+                  </h3>
+                  <p className="text-xs text-[#94A3B8]">Clear all transactional database records (leads, campaigns, follow-ups, activities) to operate with a clean slate.</p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-white/5">
+                  <div className="text-xs text-gray-400">
+                    Active dataset: <span className="text-white font-mono font-semibold">{leads.length} Leads</span>, <span className="text-white font-mono font-semibold">{campaigns.length} Campaigns</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirm("Are you sure you want to clear all transactional data? This will give you a completely clean slate database.")) {
+                        handleClearDatastore();
+                      }
+                    }}
+                    className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Clear All Datastore Records
+                  </button>
                 </div>
               </div>
 
