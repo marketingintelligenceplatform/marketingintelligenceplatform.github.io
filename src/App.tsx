@@ -239,7 +239,6 @@ export default function App() {
     } catch (err: any) {
       console.error("Login API failed:", err);
       setCurrentUser(null);
-      setIsLanding(true);
       setApiError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {
       setIsAuthLoading(false);

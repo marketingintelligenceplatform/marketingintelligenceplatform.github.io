@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { UserRole } from "../types";
-import { Shield, Sparkles, UserCheck, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Shield, Sparkles, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 interface LoginPageProps {
   onLoginSuccess: (credentials: { email: string; password: string }) => void;
@@ -14,22 +13,9 @@ export default function LoginPage({ onLoginSuccess, onSignUp, onBackToLanding, e
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("admin@mip-platform.com");
-  const [password, setPassword] = useState("Pass2026!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.ADMIN);
-
-  // Automated credential seeder for role presets
-  const selectPresetRole = (role: UserRole) => {
-    setSelectedRole(role);
-    if (role === UserRole.ADMIN) {
-      setEmail("admin@mip-platform.com");
-    } else if (role === UserRole.MARKETING_MANAGER) {
-      setEmail("marketing@mip-platform.com");
-    } else {
-      setEmail("sales@mip-platform.com");
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,38 +54,11 @@ export default function LoginPage({ onLoginSuccess, onSignUp, onBackToLanding, e
           </h2>
           <p className="text-xs text-[#94A3B8]">
             {mode === "login"
-              ? "Sign in with your organization account. The role profile only fills in the demo credentials."
+              ? "Sign in with your organization account, or create your first account below."
               : "Create one account, then create or join the workspaces you belong to."}
           </p>
           {error && <p role="alert" className="text-xs text-red-300 bg-red-950/30 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>}
         </div>
-
-        {/* Dynamic Preset Selector Tabs */}
-        {mode === "login" && <div className="space-y-2">
-          <label className="font-mono text-[9px] text-[#94A3B8] uppercase block tracking-wider font-semibold">
-            Select Role Profile
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.values(UserRole) as UserRole[]).map((role) => {
-              const active = selectedRole === role;
-              return (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => selectPresetRole(role)}
-                  className={`p-2.5 rounded-xl border text-[10px] font-medium leading-none flex flex-col justify-center items-center text-center space-y-1 transition-all duration-300 cursor-pointer ${
-                    active
-                      ? "bg-gradient-to-b from-[#7C3AED]/20 to-[#A855F7]/10 border-[#7C3AED] text-[#C084FC] shadow-lg shadow-[#7C3AED]/5"
-                      : "bg-[#161122]/60 border-white/5 text-gray-400 hover:border-white/10 hover:bg-[#1F1830]/80"
-                  }`}
-                >
-                  <UserCheck className={`w-3.5 h-3.5 ${active ? "text-[#C084FC]" : "text-gray-500"}`} />
-                  <span className="truncate w-full">{role.split(" ")[0]}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>}
 
         {/* Dynamic Credentials Form */}
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
@@ -169,11 +128,9 @@ export default function LoginPage({ onLoginSuccess, onSignUp, onBackToLanding, e
           <div className="bg-[#161122]/80 border border-white/5 p-3 rounded-xl flex items-start space-x-2.5 text-[10px] text-gray-400 leading-normal">
             <Shield className="w-4 h-4 text-[#C084FC] shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold text-gray-300 block mb-0.5">{mode === "login" ? `Role Permission: ${selectedRole}` : "Secure account setup"}</span>
+              <span className="font-semibold text-gray-300 block mb-0.5">{mode === "login" ? "Account access" : "Secure account setup"}</span>
               {mode === "signup" && "Use at least 12 characters. Your role is assigned by workspace ownership or an invitation, never by the sign-up form."}
-              {mode === "login" && selectedRole === UserRole.ADMIN && "Full platform management: Configure pipeline stages, lead profiles, campaigns, and system parameters."}
-              {mode === "login" && selectedRole === UserRole.MARKETING_MANAGER && "Manage marketing campaigns, analyze conversion channels, and review statistical reports."}
-              {mode === "login" && selectedRole === UserRole.SALES_AGENT && "Pipeline lead movement, log client activities, update deal statuses, and follow ups."}
+              {mode === "login" && "Your workspace membership determines the permissions available after you sign in."}
             </div>
           </div>
 
