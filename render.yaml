@@ -3,20 +3,31 @@ services:
     name: marketing-intelligence-platform-mip
     runtime: node
     plan: free
+
     buildCommand: npm install && npm run build
     startCommand: npm start
+
     envVars:
       - key: NODE_ENV
         value: production
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: CORS_ORIGIN
-        sync: false
-      - key: APP_URL
-        sync: false
+
       - key: DATABASE_URL
         sync: false
+
       - key: DB_SSL
-        value: true
+        value: "true"
+
+      - key: SESSION_SECRET
+        sync: false
+
       - key: INITIAL_ADMIN_PASSWORD
         sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: APP_URL
+        value: https://marketing-intelligence-platform-mip.onrender.com
+
+      - key: CORS_ORIGIN
+        value: https://marketingintelligenceplatform.github.io
