@@ -69,20 +69,20 @@ migrations before each release and only serves traffic after `/api/health`
 returns successfully.
 
 1. In Render, select **New** → **Blueprint** and connect this repository.
-2. Apply the Blueprint. Render creates `marketing-intelligence-platform-mip`
+2. Apply the Blueprint. Render updates `marketingintelligenceplatform.github.io`
    and `marketing-intelligence-platform-db`, connects them privately, and
    generates the session secret.
 3. Add `GEMINI_API_KEY` in the web service's Environment settings only if the
    optional AI feature is required, then redeploy.
-4. Open `https://marketing-intelligence-platform-mip.onrender.com/api/health`.
+4. Open `https://marketingintelligenceplatform-github-io.onrender.com/api/health`.
    A JSON response with `"status":"healthy"` confirms the API is live.
 5. Create the first production account from the sign-up screen. Production
    intentionally does not create the local demo accounts.
 
 The GitHub Pages frontend at `https://marketingintelligenceplatform.github.io`
-is allowed to call this API. Its `VITE_API_BASE_URL` repository variable must
-remain `https://marketing-intelligence-platform-mip.onrender.com` (without a
-trailing `/api`).
+is allowed to call this API. The GitHub Pages workflow builds it with
+`https://marketingintelligenceplatform-github-io.onrender.com` (without a
+trailing `/api`) as its API origin.
 
 ## API overview
 

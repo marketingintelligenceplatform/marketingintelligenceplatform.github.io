@@ -6,7 +6,8 @@ databases:
 
 services:
   - type: web
-    name: marketing-intelligence-platform-mip
+    # Match the existing Render service so Blueprint syncs update it in place.
+    name: marketingintelligenceplatform.github.io
     runtime: node
     plan: free
 
@@ -36,7 +37,7 @@ services:
         sync: false
 
       - key: APP_URL
-        value: https://marketing-intelligence-platform-mip.onrender.com
+        value: https://marketingintelligenceplatform-github-io.onrender.com
 
       - key: CORS_ORIGIN
         value: https://marketingintelligenceplatform.github.io

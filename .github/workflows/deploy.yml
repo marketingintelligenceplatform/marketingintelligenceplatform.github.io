@@ -33,12 +33,10 @@ jobs:
 
       - name: Build Project
         env:
-          # Vite replaces this at build time. Set it as a GitHub Actions
-          # repository variable to the public Render API origin, without /api.
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-        run: |
-          test -n "$VITE_API_BASE_URL" || (echo "Missing repository variable VITE_API_BASE_URL" && exit 1)
-          npm run build
+          # The API has the same source repository but a distinct Render URL.
+          # Vite embeds this value in the GitHub Pages bundle at build time.
+          VITE_API_BASE_URL: https://marketingintelligenceplatform-github-io.onrender.com
+        run: npm run build
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
