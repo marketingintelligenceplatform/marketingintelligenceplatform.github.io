@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: marketing-intelligence-platform-api
+    name: marketing-intelligence-platform-mip
     runtime: node
     plan: free
     buildCommand: npm install && npm run build
