@@ -1,27 +1,36 @@
+databases:
+  - name: marketing-intelligence-platform-db
+    plan: free
+    databaseName: mip
+    user: mip
+
 services:
   - type: web
     name: marketing-intelligence-platform-mip
     runtime: node
     plan: free
 
-    buildCommand: npm install && npm run build
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run db:migrate
     startCommand: npm start
+    healthCheckPath: /api/health
 
     envVars:
       - key: NODE_ENV
         value: production
 
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: marketing-intelligence-platform-db
+          property: connectionString
 
       - key: DB_SSL
-        value: "true"
+        # The Blueprint injects Render's private-network database URL.
+        value: "false"
 
       - key: SESSION_SECRET
-        sync: false
-
-      - key: INITIAL_ADMIN_PASSWORD
-        sync: false
+        generateValue: true
 
       - key: GEMINI_API_KEY
         sync: false
